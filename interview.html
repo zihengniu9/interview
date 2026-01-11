@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 深度访谈助手 (专业版)</title>
+    
+    <!-- 1. 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- 2. 引入 React 和 ReactDOM (使用官方 unpkg 源) -->
+    <script crossorigin src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+    <!-- 3. 引入 Babel 解析 JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <style>
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+        
+        .loading-container {
+            display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; color: #64748b; background-color: #f8fafc;
+        }
+        .spinner {
+            width: 40px; height: 40px; border: 4px solid #e2e8f0; border-top: 4px solid #3b82f6; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 16px;
+        }
+        .error-box { padding: 20px; background: #fee2e2; color: #991b1b; border: 1px solid #f87171; border-radius: 8px; max-width: 80%; text-align: center; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="bg-gray-100 h-screen overflow-hidden">
+    
+    <div id="root" class="h-full">
+        <div class="loading-container">
+            <div class="spinner"></div>
+            <p>系统资源加载中...</p>
+        </div>
+    </div>
+
+    <!-- 资源加载检测 -->
+    <script>
+        window.addEventListener('load', function() {
+            setTimeout(function() {
+                if (typeof React === 'undefined' || typeof ReactDOM === 'undefined') {
+                    document.getElementById('root').innerHTML = '<div class="loading-container"><div class="error-box"><h3>⚠️ 系统启动失败</h3><p>核心组件加载超时 (unpkg)。<br/>请检查网络连接或尝试开启/关闭 VPN。</p></div></div>';
+                }
+            }, 8000);
+        });
+    </script>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // --- 图标组件 (内联 SVG) ---
+        const IconWrapper = ({ children, size = 24, className = "" }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>{children}</svg>
+        );
+        const Mic = (props) => <IconWrapper {...props}><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></IconWrapper>;
+        const Play = (props) => <IconWrapper {...props}><polygon points="6 3 20 12 6 21 6 3"/></IconWrapper>;
+        const Sparkles = (props) => <IconWrapper {...props}><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M9 17v4"/><path d="M3 21h4"/></IconWrapper>;
+        const ChevronRight = (props) => <IconWrapper {...props}><path d="m9 18 6-6-6-6"/></IconWrapper>;
+        const ChevronLeft = (props) => <IconWrapper {...props}><path d="m15 18-6-6 6-6"/></IconWrapper>;
+        const User = (props) => <IconWrapper {...props}><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></IconWrapper>;
+        const RefreshCw = (props) => <IconWrapper {...props}><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></IconWrapper>;
+        const Building2 = (props) => <IconWrapper {...props}><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></IconWrapper>;
+        const Zap = (props) => <IconWrapper {...props}><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14H4Z"/></IconWrapper>;
+        const Copy = (props) => <IconWrapper {...props}><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></IconWrapper>;
+        const Check = (props) => <IconWrapper {...props}><path d="M20 6 9 17l-5-5"/></IconWrapper>;
+        const FileText = (props) => <IconWrapper {...props}><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></IconWrapper>;
+        const AlertCircle = (props) => <IconWrapper {...props}><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></IconWrapper>;
+        const ImagePlus = (props) => <IconWrapper {...props}><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7"/><line x1="16" x2="22" y1="5" y2="5"/><line x1="19" x2="19" y1="2" y2="8"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></IconWrapper>;
+        const X = (props) => <IconWrapper {...props}><path d="M18 6 6 18"/><path d="m6 6 12 12"/></IconWrapper>;
+
+        // --- 核心业务逻辑 ---
+
+        const generateAIQuestions = (topic) => {
+            const t = topic || "当前热点";
+            return [
+                { id: 'trend', text: `首先恭喜老师通过布局了“${t}”方向大幅盈利！请问您当时对这个板块爆发的底层逻辑和趋势判断依据是什么？` },
+                { id: 'logic', text: `在具体选股上，${t}产业链内部标的众多，想要去伪存真，您的核心选股逻辑和筛选标准有哪些独到之处？` },
+                { id: 'forecast', text: `对于${t}板块接下来的行情持续性，您怎么看？能否给大家推演一下后续可能的走势节奏？` },
+                { id: 'advice', text: `最后，针对目前${t}的高位波动，对于还在观望或者持仓的投资者，您在操作上有什么具体的建议吗？` }
+            ];
+        };
+
+        const MessageBox = ({ message, onClose }) => (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl animate-in fade-in zoom-in duration-300">
+                    <div className="flex items-center text-amber-500 mb-4">
+                        <AlertCircle className="mr-2" />
+                        <span className="font-bold text-slate-800">提示</span>
+                    </div>
+                    <p className="text-slate-600 mb-6 leading-relaxed">{message}</p>
+                    <button onClick={onClose} className="w-full bg-slate-900 text-white font-bold py-3 rounded-xl hover:bg-slate-800 transition-colors">
+                        我知道了
+                    </button>
+                </div>
+            </div>
+        );
+
+        // 组件 1：信息填写页
+        const IntroScreen = ({ onStart, topic, setTopic, username, setUsername, broker, setBroker }) => {
+            const [isAnimating, setIsAnimating] = useState(false);
+            const [error, setError] = useState(null);
+
+            const handleStart = () => {
+                if (!username.trim()) { setError("请填写投顾老师姓名"); return; }
+                if (!broker.trim()) { setError("请填写所属券商"); return; }
+                if (!topic.trim()) { setError("请输入今日采访主题"); return; }
+                setIsAnimating(true);
+                setTimeout(() => onStart(), 800);
+            };
+
+            return (
+                <div className="flex flex-col h-full bg-slate-900 text-white p-6 relative overflow-hidden font-sans">
+                    {error && <MessageBox message={error} onClose={() => setError(null)} />}
+                    <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500 opacity-10 rounded-full blur-3xl -mr-20 -mt-20"></div>
+                    
+                    <div className="flex-1 z-10 flex flex-col justify-center">
+                        <div className="mb-8 text-center">
+                            <h1 className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-yellow-200 via-yellow-400 to-amber-600 mb-3 tracking-tight">AI 深度访谈</h1>
+                            <p className="text-slate-400 text-sm">手动输入主题，一键复制图文访谈记录</p>
+                        </div>
+                        
+                        <div className="bg-slate-800/50 backdrop-blur-md rounded-2xl p-6 border border-slate-700 shadow-xl mb-8 space-y-4">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="text-xs text-slate-400 font-bold mb-2 block">老师姓名</label>
+                                    <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="如：王老师" className="w-full bg-slate-900/50 border border-slate-600 rounded-xl p-3 text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 transition-all text-sm" />
+                                </div>
+                                <div>
+                                    <label className="text-xs text-slate-400 font-bold mb-2 block">所属券商</label>
+                                    <input type="text" value={broker} onChange={(e) => setBroker(e.target.value)} placeholder="如：中信证券" className="w-full bg-slate-900/50 border border-slate-600 rounded-xl p-3 text-white placeholder-slate-600 focus:outline-none focus:border-purple-500 transition-all text-sm" />
+                                </div>
+                            </div>
+
+                            <div className="relative pt-2">
+                                <label className="text-sm text-yellow-500 font-bold mb-2 block flex items-center">
+                                    <span className="flex items-center"><Zap className="w-4 h-4 mr-2" /> 本期采访专题</span>
+                                </label>
+                                <div className="relative">
+                                    <input 
+                                        type="text" 
+                                        value={topic} 
+                                        onChange={(e) => setTopic(e.target.value)} 
+                                        placeholder="请输入主题（如：低空经济）" 
+                                        className="w-full bg-slate-900/80 border border-yellow-500/50 rounded-xl p-4 text-yellow-100 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-yellow-500/50 transition-all font-bold text-lg" 
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <button onClick={handleStart} className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold py-4 rounded-xl shadow-lg transition-all flex items-center justify-center hover:scale-[1.02] active:scale-[0.98]">
+                        {isAnimating ? <><RefreshCw className="w-5 h-5 mr-2 animate-spin" /> 准备提纲中...</> : <><Sparkles className="w-5 h-5 mr-2 fill-current" /> 开始采访</>}
+                    </button>
+                </div>
+            );
+        };
+
+        // --- 组件 2：采访进行页 ---
+        const InterviewScreen = ({ questions, answers, setAnswers, questionImages, setQuestionImages, onFinish, onBack }) => {
+            const [currentQIndex, setCurrentQIndex] = useState(0);
+            const [transcript, setTranscript] = useState('');
+            const [isRecording, setIsRecording] = useState(false);
+            const [isSpeaking, setIsSpeaking] = useState(false);
+            const [selectedVoice, setSelectedVoice] = useState(null);
+            const recognitionRef = useRef(null);
+            const fileInputRef = useRef(null);
+            
+            const currentQuestion = questions[currentQIndex];
+
+            // 语音加载逻辑
+            const loadAndSetVoice = () => {
+                const voices = window.speechSynthesis.getVoices();
+                // 优先寻找 Xiaoxiao 或 晓晓
+                const xiaoxiao = voices.find(v => v.name.toLowerCase().includes("xiaoxiao") || v.name.includes("晓晓"));
+                const zhVoice = voices.find(v => (v.lang.includes('zh') || v.lang.includes('CN')) && !v.lang.includes('HK') && !v.name.includes('Cantonese'));
+                
+                if (xiaoxiao) return xiaoxiao;
+                if (zhVoice) return zhVoice;
+                return null;
+            };
+
+            useEffect(() => {
+                const voice = loadAndSetVoice();
+                if (voice) setSelectedVoice(voice);
+                
+                window.speechSynthesis.onvoiceschanged = () => {
+                    const v = loadAndSetVoice();
+                    if (v) setSelectedVoice(v);
+                };
+
+                if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+                    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                    recognitionRef.current = new SpeechRecognition();
+                    recognitionRef.current.continuous = true;
+                    recognitionRef.current.interimResults = true;
+                    recognitionRef.current.lang = 'zh-CN';
+                    recognitionRef.current.onresult = (event) => {
+                        let txt = '';
+                        for (let i = 0; i < event.results.length; ++i) txt += event.results[i][0].transcript;
+                        setTranscript(txt); 
+                    };
+                    recognitionRef.current.onend = () => setIsRecording(false);
+                }
+            }, []);
+
+            // 播放逻辑：安全检查
+            const speakQuestion = (text, retryCount = 0) => {
+                window.speechSynthesis.cancel();
+                
+                const voices = window.speechSynthesis.getVoices();
+                
+                // 智能等待：如果语音列表未加载，重试（最多等待 1 秒）
+                if (voices.length === 0 && retryCount < 10) {
+                    setTimeout(() => speakQuestion(text, retryCount + 1), 100);
+                    return;
+                }
+
+                // 核心控制：如果语音列表依然为空，直接跳过播放
+                if (voices.length === 0) {
+                    return;
+                }
+
+                const currentVoice = loadAndSetVoice();
+                if (currentVoice) {
+                    setSelectedVoice(currentVoice);
+                }
+
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = 'zh-CN'; 
+                utterance.rate = 1.2;
+                utterance.pitch = 1.0;
+                
+                if (currentVoice) {
+                    utterance.voice = currentVoice;
+                } else if (selectedVoice) {
+                    utterance.voice = selectedVoice;
+                }
+
+                utterance.onstart = () => setIsSpeaking(true);
+                utterance.onend = () => setIsSpeaking(false);
+                window.speechSynthesis.speak(utterance);
+            };
+
+            useEffect(() => {
+                const timer = setTimeout(() => { speakQuestion(currentQuestion.text); }, 500);
+                setTranscript(answers[currentQuestion.id] || '');
+                return () => clearTimeout(timer);
+            }, [currentQIndex]);
+
+            const toggleRecording = () => {
+                if (isRecording) { recognitionRef.current?.stop(); }
+                else { window.speechSynthesis.cancel(); setIsSpeaking(false); recognitionRef.current?.start(); setIsRecording(true); }
+            };
+
+            const handleNext = () => {
+                const newAnswers = { ...answers, [currentQuestion.id]: transcript };
+                setAnswers(newAnswers);
+                if (currentQIndex < questions.length - 1) { 
+                    setCurrentQIndex(curr => curr + 1); 
+                } else { 
+                    onFinish(newAnswers); 
+                }
+            };
+
+            const handleGoBack = () => {
+                const newAnswers = { ...answers, [currentQuestion.id]: transcript };
+                setAnswers(newAnswers);
+                if (currentQIndex > 0) {
+                    setCurrentQIndex(curr => curr - 1);
+                } else {
+                    onBack();
+                }
+            };
+
+            const handleImageUpload = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        setQuestionImages(prev => ({ ...prev, [currentQuestion.id]: reader.result }));
+                    };
+                    reader.readAsDataURL(file);
+                }
+            };
+
+            const removeImage = () => {
+                setQuestionImages(prev => {
+                    const next = { ...prev };
+                    delete next[currentQuestion.id];
+                    return next;
+                });
+            };
+
+            return (
+                <div className="flex flex-col h-full bg-slate-50">
+                    <div className="h-1 bg-slate-200">
+                        <div className="h-full bg-blue-500 transition-all duration-500" style={{ width: `${((currentQIndex + 1) / questions.length) * 100}%` }}></div>
+                    </div>
+
+                    <div className="flex items-center justify-between p-4 bg-white border-b">
+                        <button onClick={handleGoBack} className="flex items-center text-slate-500 text-sm font-bold">
+                            <ChevronLeft size={20} className="mr-1" /> 返回
+                        </button>
+                        <span className="text-xs font-bold text-slate-400">问题 {currentQIndex + 1} / {questions.length}</span>
+                        <div className="w-10"></div>
+                    </div>
+
+                    <div className="p-6 flex flex-col items-center bg-white shadow-sm pb-8 rounded-b-3xl z-10">
+                        <div className={`relative w-20 h-20 rounded-full mb-4 border-4 transition-all overflow-hidden ${isSpeaking ? 'border-blue-400 scale-110 shadow-lg shadow-blue-200' : 'border-slate-100 scale-100'}`}>
+                            {/* [更新] 白人职业女性头像 (Unsplash 高清图源 + Base64 兜底) */}
+                            <img 
+                                src="https://images.unsplash.com/photo-1438761681033-6461ffad8d80?q=80&w=300&auto=format&fit=crop" 
+                                onError={(e) => {
+                                    if (e.target.dataset.triedBackup !== "true") {
+                                        e.target.dataset.triedBackup = "true";
+                                        // 备用图 2
+                                        e.target.src = "https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=300&auto=format&fit=crop";
+                                    } else {
+                                        e.target.onerror = null; 
+                                        // 兜底矢量图
+                                        e.target.src = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyMDAgMjAwIiBmaWxsPSJub25lIj4KICA8Y2lyY2xlIGN4PSIxMDAiIGN5PSIxMDAiIHI9IjEwMCIgZmlsbD0iI2UzZTdlYiIvPgogIDxwYXRoIGQ9Ik0xMDAgMTYwYzMwIDAgNTAtMjAgNTAtNTBzLTIwLTUwLTUwLTUwLTUwIDIwLTUwIDUwIDIwIDUwIDUwIDUweiIgZmlsbD0iI2Y1YzJiYiIvPgogIDxwYXRoIGQ9Ik0xMDAgMTIwYzEwIDAgMTgtOCAxOC0xOHMtOC0xOC0xOC0xOC0xOCA4LTE4IDE4IDggMTggMTggMTh6IiBmaWxsPSIjM2UzZTNlIi8+CiAgPHBhdGggZD0iTTEwMCAxNDBjMjAgMCAzMC0xMCAzMC0yMHMtMTAtMjAtMzAtMjAtMzAgMTAtMzAgMjAgMTAgMjAgMzAgMjB6IiBmaWxsPSIjZmZjMGNiIi8+CiAgPHBhdGggZD0iTTEwMCAxNzBjNDAgMCA3MC0yMCA3MC02MHY5MHMtMzAgMjAtNzAgMjAtNzAtMjAtNzAtMjB2LTkwYzAgNDAgMzAgNjAgNzAgNjB6IiBmaWxsPSIjM2UzZTNlIi8+Cjwvc3ZnPg==";
+                                    }
+                                }}
+                                alt="Interviewer" 
+                                className="w-full h-full rounded-full object-cover transform hover:scale-110 transition-transform duration-500"
+                            />
+                        </div>
+                        
+                        {selectedVoice && (
+                            <div className="mb-2 text-[10px] text-blue-400 bg-blue-50 px-2 py-0.5 rounded-full flex items-center">
+                                <Mic size={10} className="mr-1" /> 语音: {selectedVoice.name.replace(/Microsoft |Online \(.*\) - /g, '')}
+                            </div>
+                        )}
+
+                        <div className="bg-slate-100 rounded-xl p-4 text-slate-800 text-sm leading-relaxed border border-slate-200">{currentQuestion.text}</div>
+                        <button onClick={() => speakQuestion(currentQuestion.text)} className="mt-3 text-blue-500 text-xs flex items-center font-bold hover:text-blue-600 transition-colors"><Play size={12} className="mr-1" /> 点击重播问题</button>
+                    </div>
+
+                    <div className="flex-1 p-6 flex flex-col overflow-y-auto">
+                        <div className="flex-1 flex flex-col mb-4">
+                        <textarea 
+                            className="flex-1 w-full bg-white rounded-2xl border-2 border-slate-100 p-4 mb-4 resize-none focus:outline-none focus:border-blue-500 transition-all shadow-inner" 
+                            placeholder="请老师通过语音或文字输入您的见解..." 
+                            value={transcript} 
+                            onChange={(e) => setTranscript(e.target.value)}
+                        />
+
+                        <div className="flex items-center gap-4">
+                            {!questionImages[currentQuestion.id] ? (
+                            <button 
+                                onClick={() => fileInputRef.current.click()}
+                                className="flex items-center gap-2 text-blue-600 bg-blue-50 px-4 py-3 rounded-xl text-sm font-bold border border-blue-100 hover:bg-blue-100 transition-colors"
+                            >
+                                <ImagePlus size={18} />
+                                上传图片补充观点
+                            </button>
+                            ) : (
+                            <div className="relative group">
+                                <img src={questionImages[currentQuestion.id]} className="w-20 h-20 object-cover rounded-xl border-2 border-white shadow-md" alt="upload-preview" />
+                                <button 
+                                onClick={removeImage}
+                                className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full shadow-lg"
+                                >
+                                <X size={12} />
+                                </button>
+                            </div>
+                            )}
+                            <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
+                        </div>
+                        </div>
+
+                        <div className="flex gap-4">
+                            <button onClick={toggleRecording} className={`flex-1 py-4 rounded-2xl font-bold flex justify-center transition-all ${isRecording ? 'bg-red-500 text-white shadow-lg shadow-red-200 animate-pulse' : 'bg-white border-2 border-slate-200 text-slate-600'}`}>{isRecording ? "正在录音..." : "点击说话"}</button>
+                            <button onClick={handleNext} disabled={!transcript.trim()} className="w-16 h-14 bg-blue-600 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-blue-200 disabled:bg-slate-200 disabled:shadow-none transition-all active:scale-90"><ChevronRight size={28} /></button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- 组件 3：预览页 ---
+        const ReviewScreen = ({ questions, answers, questionImages, onRestart, topic, username, broker }) => {
+            const [isPolishing, setIsPolishing] = useState(true);
+            const [polishedContent, setPolishedContent] = useState([]);
+            const [copyStatus, setCopyStatus] = useState("idle");
+
+            useEffect(() => {
+                setTimeout(() => {
+                    const processed = questions.map(q => ({ 
+                        id: q.id,
+                        question: q.text, 
+                        polished: (answers[q.id] || "").trim() || "（未回答）",
+                        image: questionImages[q.id] || null
+                    }));
+                    setPolishedContent(processed);
+                    setIsPolishing(false);
+                }, 1500);
+            }, []);
+
+            const handleCopy = async () => {
+                let htmlText = `
+                    <div style="font-family: sans-serif; color: #333; max-width: 600px;">
+                        <h2 style="color: #1e40af; margin-bottom: 4px;">${topic}</h2>
+                        <p style="color: #666; font-size: 14px; margin-bottom: 24px;">
+                        嘉宾：<b>${username}</b> (${broker}) | 时间：${new Date().toLocaleDateString()}
+                        </p>
+                        <hr style="border: none; border-top: 1px solid #eee; margin-bottom: 24px;" />
+                        ${polishedContent.map((item, index) => `
+                        <div style="margin-bottom: 32px;">
+                            <p style="font-weight: bold; color: #1e3a8a; margin-bottom: 8px;">Q${index + 1}：${item.question}</p>
+                            <p style="background: #f8fafc; padding: 12px; border-radius: 8px; border: 1px solid #f1f5f9; white-space: pre-wrap;">${item.polished}</p>
+                            ${item.image ? `<div style="margin-top: 12px;"><img src="${item.image}" style="max-width: 100%; border-radius: 8px; border: 1px solid #eee;" /></div>` : ''}
+                        </div>
+                        `).join('')}
+                        <p style="font-size: 10px; color: #ccc; text-align: center; margin-top: 40px;">由 AI 深度访谈助手生成</p>
+                    </div>
+                `;
+
+                try {
+                    const container = document.createElement('div');
+                    container.innerHTML = htmlText;
+                    container.style.position = 'fixed';
+                    container.style.left = '-9999px';
+                    container.style.top = '0';
+                    document.body.appendChild(container);
+
+                    const range = document.createRange();
+                    range.selectNodeContents(container);
+                    const selection = window.getSelection();
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+
+                    const successful = document.execCommand('copy');
+                    document.body.removeChild(container);
+                    selection.removeAllRanges();
+
+                    if (successful) {
+                        setCopyStatus("copied");
+                        setTimeout(() => setCopyStatus("idle"), 3000);
+                    } else {
+                        throw new Error('复制命令执行失败');
+                    }
+                } catch (err) {
+                    console.error("复制失败", err);
+                    setCopyStatus("idle");
+                }
+            };
+
+            if (isPolishing) return <div className="h-full flex items-center justify-center bg-slate-900 text-white flex-col"><Sparkles className="animate-spin mb-4 w-10 h-10 text-yellow-400"/><p className="text-sm font-bold tracking-widest animate-pulse">AI 正在整理访谈纪要...</p></div>;
+
+            return (
+                <div className="flex flex-col h-full bg-slate-50 overflow-hidden font-sans">
+                    <div className="flex-1 overflow-y-auto p-4 space-y-6">
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border-2 border-slate-100 mx-auto max-w-2xl">
+                            <div className="flex justify-between items-center mb-6 border-b pb-4">
+                                <div>
+                                    <h1 className="text-xl font-bold text-slate-800">访谈记录预览</h1>
+                                    <div className="flex gap-2 mt-2">
+                                        <span className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded-full font-bold">{username}</span>
+                                        <span className="text-xs bg-purple-100 text-purple-600 px-2 py-1 rounded-full font-bold">{broker}</span>
+                                    </div>
+                                </div>
+                                <FileText className="text-slate-300" size={32} />
+                            </div>
+                            {polishedContent.map((item, idx) => (
+                                <div key={idx} className="mb-8">
+                                    <h3 className="font-bold text-blue-800 text-sm mb-2 leading-relaxed">Q: {item.question}</h3>
+                                    <div className="text-slate-600 text-sm leading-relaxed border-l-4 border-blue-100 pl-4 py-1 mb-3">
+                                        {item.polished}
+                                    </div>
+                                    {item.image && (
+                                        <div className="mt-3 rounded-xl overflow-hidden border-2 border-slate-50 shadow-sm inline-block">
+                                            <img src={item.image} alt="response-pic" className="max-w-full h-auto max-h-64 object-contain" />
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="p-4 bg-white border-t space-y-3 shadow-2xl">
+                        <button onClick={handleCopy} className={`w-full font-bold py-4 rounded-2xl shadow-lg flex justify-center items-center transition-all ${copyStatus === 'copied' ? 'bg-green-500 text-white' : 'bg-blue-600 text-white hover:bg-blue-700 shadow-blue-200'}`}>
+                            {copyStatus === 'copied' ? <><Check className="mr-2" /> 已成功复制！</> : <><Copy className="mr-2" size={20} /> 一键复制完整访谈</>}
+                        </button>
+                        <p className="text-[10px] text-slate-400 text-center">复制后可直接粘贴至微信、Word、邮件等</p>
+                        <button onClick={onRestart} className="w-full text-slate-400 text-xs font-bold py-2">开始新的采访</button>
+                    </div>
+                </div>
+            );
+        };
+
+        const App = () => {
+            const [step, setStep] = useState(0);
+            const [interviewData, setInterviewData] = useState({});
+            const [questionImages, setQuestionImages] = useState({});
+            const [topic, setTopic] = useState("");
+            const [username, setUsername] = useState(""); 
+            const [broker, setBroker] = useState(""); 
+            const [questions, setQuestions] = useState([]);
+
+            const handleStart = () => { setQuestions(generateAIQuestions(topic)); setStep(1); };
+            const handleFinish = (data) => { setInterviewData(data); setStep(2); };
+            const handleBackToIntro = () => { setStep(0); };
+            const handleRestart = () => { 
+                setStep(0); 
+                setTopic(""); 
+                setInterviewData({}); 
+                setQuestionImages({}); 
+            };
+
+            return (
+                <div className="w-full max-w-md mx-auto h-[100vh] bg-slate-100 shadow-xl overflow-hidden font-sans flex flex-col">
+                    <div className="flex-1 overflow-hidden">
+                        {step === 0 && <IntroScreen onStart={handleStart} topic={topic} setTopic={setTopic} username={username} setUsername={setUsername} broker={broker} setBroker={setBroker} />}
+                        {step === 1 && (
+                            <InterviewScreen 
+                                questions={questions} 
+                                answers={interviewData} 
+                                setAnswers={setInterviewData}
+                                questionImages={questionImages}
+                                setQuestionImages={setQuestionImages}
+                                onFinish={handleFinish} 
+                                onBack={handleBackToIntro}
+                                topic={topic} 
+                            />
+                        )}
+                        {step === 2 && (
+                            <ReviewScreen 
+                                questions={questions} 
+                                answers={interviewData} 
+                                questionImages={questionImages}
+                                onRestart={handleRestart} 
+                                topic={topic} 
+                                username={username} 
+                                broker={broker} 
+                            />
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
